@@ -14,37 +14,62 @@
  * limitations under the License.
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { CallToolRequestSchema, ListResourcesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import {
+  CallToolRequestSchema,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+  ReadResourceRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 
-import { Context } from './context';
+import { Context } from "./context";
 
-import type { Tool } from './tools/tool';
-import type { Resource } from './resources/resource';
-import type { LaunchOptions } from 'playwright';
+import type { Tool } from "./tools/tool";
+import type { Resource } from "./resources/resource";
+import type { LaunchOptions } from "playwright";
 
-export function createServerWithTools(name: string, version: string, tools: Tool[], resources: Resource[], launchOption?: LaunchOptions): Server {
-  const context = new Context(launchOption);
-  const server = new Server({ name, version }, {
-    capabilities: {
-      tools: {},
-      resources: {},
+export function createServerWithTools(
+  name: string,
+  version: string,
+  tools: Tool[],
+  resources: Resource[],
+  launchOption?: LaunchOptions
+): Server {
+  const server = new Server(
+    { name, version },
+    {
+      capabilities: {
+        tools: {},
+        resources: {},
+        logging: {},
+      },
     }
-  });
+  );
+
+  // TODO pass more robust logging solution
+  async function log(data: unknown) {
+    await server.sendLoggingMessage({
+      level: "info",
+      data,
+    });
+  }
+  const context = new Context(launchOption, log);
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return { tools: tools.map(tool => tool.schema) };
+    return { tools: tools.map((tool) => tool.schema) };
   });
 
   server.setRequestHandler(ListResourcesRequestSchema, async () => {
-    return { resources: resources.map(resource => resource.schema) };
+    return { resources: resources.map((resource) => resource.schema) };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async request => {
-    const tool = tools.find(tool => tool.schema.name === request.params.name);
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const tool = tools.find((tool) => tool.schema.name === request.params.name);
     if (!tool) {
       return {
-        content: [{ type: 'text', text: `Tool "${request.params.name}" not found` }],
+        content: [
+          { type: "text", text: `Tool "${request.params.name}" not found` },
+        ],
         isError: true,
       };
     }
@@ -54,16 +79,17 @@ export function createServerWithTools(name: string, version: string, tools: Tool
       return result;
     } catch (error) {
       return {
-        content: [{ type: 'text', text: String(error) }],
+        content: [{ type: "text", text: String(error) }],
         isError: true,
       };
     }
   });
 
-  server.setRequestHandler(ReadResourceRequestSchema, async request => {
-    const resource = resources.find(resource => resource.schema.uri === request.params.uri);
-    if (!resource)
-      return { contents: [] };
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const resource = resources.find(
+      (resource) => resource.schema.uri === request.params.uri
+    );
+    if (!resource) return { contents: [] };
 
     const contents = await resource.read(context, request.params.uri);
     return { contents };

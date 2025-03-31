@@ -14,30 +14,34 @@
  * limitations under the License.
  */
 
-import type * as playwright from 'playwright';
-import type { ToolResult } from './tool';
-import type { Context } from '../context';
+import type * as playwright from "playwright";
+import type { ToolResult } from "./tool";
+import type { Context } from "../context";
 
-async function waitForCompletion<R>(page: playwright.Page, callback: () => Promise<R>): Promise<R> {
+async function waitForCompletion<R>(
+  page: playwright.Page,
+  callback: () => Promise<R>
+): Promise<R> {
   const requests = new Set<playwright.Request>();
   let frameNavigated = false;
   let waitCallback: () => void = () => {};
-  const waitBarrier = new Promise<void>(f => { waitCallback = f; });
+  const waitBarrier = new Promise<void>((f) => {
+    waitCallback = f;
+  });
 
-  const requestListener = (request: playwright.Request) => requests.add(request);
+  const requestListener = (request: playwright.Request) =>
+    requests.add(request);
   const requestFinishedListener = (request: playwright.Request) => {
     requests.delete(request);
-    if (!requests.size)
-      waitCallback();
+    if (!requests.size) waitCallback();
   };
 
   const frameNavigateListener = (frame: playwright.Frame) => {
-    if (frame.parentFrame())
-      return;
+    if (frame.parentFrame()) return;
     frameNavigated = true;
     dispose();
     clearTimeout(timeout);
-    void frame.waitForLoadState('load').then(() => {
+    void frame.waitForLoadState("load").then(() => {
       waitCallback();
     });
   };
@@ -47,49 +51,65 @@ async function waitForCompletion<R>(page: playwright.Page, callback: () => Promi
     waitCallback();
   };
 
-  page.on('request', requestListener);
-  page.on('requestfinished', requestFinishedListener);
-  page.on('framenavigated', frameNavigateListener);
+  page.on("request", requestListener);
+  page.on("requestfinished", requestFinishedListener);
+  page.on("framenavigated", frameNavigateListener);
   const timeout = setTimeout(onTimeout, 10000);
 
   const dispose = () => {
-    page.off('request', requestListener);
-    page.off('requestfinished', requestFinishedListener);
-    page.off('framenavigated', frameNavigateListener);
+    page.off("request", requestListener);
+    page.off("requestfinished", requestFinishedListener);
+    page.off("framenavigated", frameNavigateListener);
     clearTimeout(timeout);
   };
 
   try {
     const result = await callback();
-    if (!requests.size && !frameNavigated)
-      waitCallback();
+    if (!requests.size && !frameNavigated) waitCallback();
     await waitBarrier;
-    await page.evaluate(() => new Promise(f => setTimeout(f, 1000)));
+    await page.evaluate(() => new Promise((f) => setTimeout(f, 1000)));
     return result;
   } finally {
     dispose();
   }
 }
 
-export async function runAndWait(context: Context, status: string, callback: (page: playwright.Page) => Promise<any>, snapshot: boolean = false): Promise<ToolResult> {
+export async function runAndWait(
+  context: Context,
+  status: string,
+  callback: (page: playwright.Page) => Promise<any>,
+  snapshot: boolean = false,
+  returnCallbackResult: boolean = false
+): Promise<ToolResult> {
   const page = await context.ensurePage();
-  await waitForCompletion(page, () => callback(page));
-  return snapshot ? captureAriaSnapshot(page, status) : {
-    content: [{ type: 'text', text: status }],
-  };
+  const result = await waitForCompletion(page, () => callback(page));
+  const statusToUse = returnCallbackResult && result ? result : status;
+  return snapshot
+    ? captureAriaSnapshot(page, statusToUse)
+    : {
+        content: [{ type: "text", text: statusToUse }],
+      };
 }
 
-export async function captureAriaSnapshot(page: playwright.Page, status: string = ''): Promise<ToolResult> {
-  const snapshot = await page.locator('html').ariaSnapshot({ ref: true });
+export async function captureAriaSnapshot(
+  page: playwright.Page,
+  status: string = ""
+): Promise<ToolResult> {
+  const snapshot = await page.locator("html").ariaSnapshot({ ref: true });
+  // TODO better formatting for status when it's a callback result
   return {
-    content: [{ type: 'text', text: `${status ? `${status}\n` : ''}
+    content: [
+      {
+        type: "text",
+        text: `${status ? `${status}\n` : ""}
 - Page URL: ${page.url()}
 - Page Title: ${await page.title()}
 - Page Snapshot
 \`\`\`yaml
 ${snapshot}
 \`\`\`
-`
-    }],
+`,
+      },
+    ],
   };
 }
