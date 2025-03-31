@@ -14,43 +14,44 @@
  * limitations under the License.
  */
 
-import os from "os";
-import path from "path";
+import os from 'os';
+import path from 'path';
 
-import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { z } from 'zod';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 
-import { captureAriaSnapshot, runAndWait } from "./utils";
+import { captureAriaSnapshot, runAndWait } from './utils';
 
-import type { ToolFactory, Tool } from "./tool";
+import type { ToolFactory, Tool } from './tool';
 
 import {
   executePlaywrightCode,
   replHealhCheck,
   ReplMessage,
-} from "./repl-utils";
+} from './repl-utils';
 
 const navigateSchema = z.object({
-  url: z.string().describe("The URL to navigate to"),
+  url: z.string().describe('The URL to navigate to'),
 });
 
-export const navigate: ToolFactory = (snapshot) => ({
+export const navigate: ToolFactory = snapshot => ({
   schema: {
-    name: "browser_navigate",
-    description: "Navigate to a URL",
+    name: 'browser_navigate',
+    description: 'Navigate to a URL',
     inputSchema: zodToJsonSchema(navigateSchema),
   },
   handle: async (context, params) => {
     const validatedParams = navigateSchema.parse(params);
     const page = await context.ensurePage();
-    await page.goto(validatedParams.url, { waitUntil: "domcontentloaded" });
+    await page.goto(validatedParams.url, { waitUntil: 'domcontentloaded' });
     // Cap load event to 5 seconds, the page is operational at this point.
-    await page.waitForLoadState("load", { timeout: 5000 }).catch(() => {});
-    if (snapshot) return captureAriaSnapshot(page);
+    await page.waitForLoadState('load', { timeout: 5000 }).catch(() => {});
+    if (snapshot)
+      return captureAriaSnapshot(page);
     return {
       content: [
         {
-          type: "text",
+          type: 'text',
           text: `Navigated to ${validatedParams.url}`,
         },
       ],
@@ -60,54 +61,54 @@ export const navigate: ToolFactory = (snapshot) => ({
 
 const goBackSchema = z.object({});
 
-export const goBack: ToolFactory = (snapshot) => ({
+export const goBack: ToolFactory = snapshot => ({
   schema: {
-    name: "browser_go_back",
-    description: "Go back to the previous page",
+    name: 'browser_go_back',
+    description: 'Go back to the previous page',
     inputSchema: zodToJsonSchema(goBackSchema),
   },
-  handle: async (context) => {
+  handle: async context => {
     return await runAndWait(
-      context,
-      "Navigated back",
-      async () => {
-        const page = await context.ensurePage();
-        await page.goBack();
-      },
-      snapshot
+        context,
+        'Navigated back',
+        async () => {
+          const page = await context.ensurePage();
+          await page.goBack();
+        },
+        snapshot
     );
   },
 });
 
 const goForwardSchema = z.object({});
 
-export const goForward: ToolFactory = (snapshot) => ({
+export const goForward: ToolFactory = snapshot => ({
   schema: {
-    name: "browser_go_forward",
-    description: "Go forward to the next page",
+    name: 'browser_go_forward',
+    description: 'Go forward to the next page',
     inputSchema: zodToJsonSchema(goForwardSchema),
   },
-  handle: async (context) => {
+  handle: async context => {
     return await runAndWait(
-      context,
-      "Navigated forward",
-      async () => {
-        const page = await context.ensurePage();
-        await page.goForward();
-      },
-      snapshot
+        context,
+        'Navigated forward',
+        async () => {
+          const page = await context.ensurePage();
+          await page.goForward();
+        },
+        snapshot
     );
   },
 });
 
 const waitSchema = z.object({
-  time: z.number().describe("The time to wait in seconds"),
+  time: z.number().describe('The time to wait in seconds'),
 });
 
 export const wait: Tool = {
   schema: {
-    name: "browser_wait",
-    description: "Wait for a specified time in seconds",
+    name: 'browser_wait',
+    description: 'Wait for a specified time in seconds',
     inputSchema: zodToJsonSchema(waitSchema),
   },
   handle: async (context, params) => {
@@ -117,7 +118,7 @@ export const wait: Tool = {
     return {
       content: [
         {
-          type: "text",
+          type: 'text',
           text: `Waited for ${validatedParams.time} seconds`,
         },
       ],
@@ -127,26 +128,26 @@ export const wait: Tool = {
 
 const pressKeySchema = z.object({
   key: z
-    .string()
-    .describe(
-      "Name of the key to press or a character to generate, such as `ArrowLeft` or `a`"
-    ),
+      .string()
+      .describe(
+          'Name of the key to press or a character to generate, such as `ArrowLeft` or `a`'
+      ),
 });
 
 export const pressKey: Tool = {
   schema: {
-    name: "browser_press_key",
-    description: "Press a key on the keyboard",
+    name: 'browser_press_key',
+    description: 'Press a key on the keyboard',
     inputSchema: zodToJsonSchema(pressKeySchema),
   },
   handle: async (context, params) => {
     const validatedParams = pressKeySchema.parse(params);
     return await runAndWait(
-      context,
-      `Pressed key ${validatedParams.key}`,
-      async (page) => {
-        await page.keyboard.press(validatedParams.key);
-      }
+        context,
+        `Pressed key ${validatedParams.key}`,
+        async page => {
+          await page.keyboard.press(validatedParams.key);
+        }
     );
   },
 };
@@ -155,21 +156,21 @@ const pdfSchema = z.object({});
 
 export const pdf: Tool = {
   schema: {
-    name: "browser_save_as_pdf",
-    description: "Save page as PDF",
+    name: 'browser_save_as_pdf',
+    description: 'Save page as PDF',
     inputSchema: zodToJsonSchema(pdfSchema),
   },
-  handle: async (context) => {
+  handle: async context => {
     const page = await context.ensurePage();
     const fileName = path.join(
-      os.tmpdir(),
-      `/page-${new Date().toISOString()}.pdf`
+        os.tmpdir(),
+        `/page-${new Date().toISOString()}.pdf`
     );
     await page.pdf({ path: fileName });
     return {
       content: [
         {
-          type: "text",
+          type: 'text',
           text: `Saved as ${fileName}`,
         },
       ],
@@ -181,16 +182,16 @@ const closeSchema = z.object({});
 
 export const close: Tool = {
   schema: {
-    name: "browser_close",
-    description: "Close the page",
+    name: 'browser_close',
+    description: 'Close the page',
     inputSchema: zodToJsonSchema(closeSchema),
   },
-  handle: async (context) => {
+  handle: async context => {
     await context.close();
     return {
       content: [
         {
-          type: "text",
+          type: 'text',
           text: `Page closed`,
         },
       ],
@@ -200,16 +201,16 @@ export const close: Tool = {
 
 const evaluatePlaywrightSchema = z.object({
   code: z
-    .string()
-    .describe(
-      "The code to evaluate in the context of the Playwright test execution environment"
-    ),
+      .string()
+      .describe(
+          'The code to evaluate in the context of the Playwright test execution environment'
+      ),
 });
 
 export const evaluatePlaywright: Tool = {
   schema: {
-    name: "browser_evaluate_playwright",
-    description: "Evaluate Playwright code",
+    name: 'browser_evaluate_playwright',
+    description: 'Evaluate Playwright code',
     inputSchema: zodToJsonSchema(evaluatePlaywrightSchema),
   },
   handle: async (context, params) => {
@@ -222,8 +223,8 @@ export const evaluatePlaywright: Tool = {
     return {
       content: [
         {
-          type: "text",
-          text: result.result || "Code executed successfully",
+          type: 'text',
+          text: result.result || 'Code executed successfully',
         },
       ],
     };

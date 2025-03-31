@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-import type * as playwright from "playwright";
-import type { ToolResult } from "./tool";
-import type { Context } from "../context";
+import type * as playwright from 'playwright';
+import type { ToolResult } from './tool';
+import type { Context } from '../context';
 
 async function waitForCompletion<R>(
   page: playwright.Page,
@@ -25,7 +25,7 @@ async function waitForCompletion<R>(
   const requests = new Set<playwright.Request>();
   let frameNavigated = false;
   let waitCallback: () => void = () => {};
-  const waitBarrier = new Promise<void>((f) => {
+  const waitBarrier = new Promise<void>(f => {
     waitCallback = f;
   });
 
@@ -33,15 +33,17 @@ async function waitForCompletion<R>(
     requests.add(request);
   const requestFinishedListener = (request: playwright.Request) => {
     requests.delete(request);
-    if (!requests.size) waitCallback();
+    if (!requests.size)
+      waitCallback();
   };
 
   const frameNavigateListener = (frame: playwright.Frame) => {
-    if (frame.parentFrame()) return;
+    if (frame.parentFrame())
+      return;
     frameNavigated = true;
     dispose();
     clearTimeout(timeout);
-    void frame.waitForLoadState("load").then(() => {
+    void frame.waitForLoadState('load').then(() => {
       waitCallback();
     });
   };
@@ -51,23 +53,24 @@ async function waitForCompletion<R>(
     waitCallback();
   };
 
-  page.on("request", requestListener);
-  page.on("requestfinished", requestFinishedListener);
-  page.on("framenavigated", frameNavigateListener);
+  page.on('request', requestListener);
+  page.on('requestfinished', requestFinishedListener);
+  page.on('framenavigated', frameNavigateListener);
   const timeout = setTimeout(onTimeout, 10000);
 
   const dispose = () => {
-    page.off("request", requestListener);
-    page.off("requestfinished", requestFinishedListener);
-    page.off("framenavigated", frameNavigateListener);
+    page.off('request', requestListener);
+    page.off('requestfinished', requestFinishedListener);
+    page.off('framenavigated', frameNavigateListener);
     clearTimeout(timeout);
   };
 
   try {
     const result = await callback();
-    if (!requests.size && !frameNavigated) waitCallback();
+    if (!requests.size && !frameNavigated)
+      waitCallback();
     await waitBarrier;
-    await page.evaluate(() => new Promise((f) => setTimeout(f, 1000)));
+    await page.evaluate(() => new Promise(f => setTimeout(f, 1000)));
     return result;
   } finally {
     dispose();
@@ -87,21 +90,21 @@ export async function runAndWait(
   return snapshot
     ? captureAriaSnapshot(page, statusToUse)
     : {
-        content: [{ type: "text", text: statusToUse }],
-      };
+      content: [{ type: 'text', text: statusToUse }],
+    };
 }
 
 export async function captureAriaSnapshot(
   page: playwright.Page,
-  status: string = ""
+  status: string = ''
 ): Promise<ToolResult> {
-  const snapshot = await page.locator("html").ariaSnapshot({ ref: true });
+  const snapshot = await page.locator('html').ariaSnapshot({ ref: true });
   // TODO better formatting for status when it's a callback result
   return {
     content: [
       {
-        type: "text",
-        text: `${status ? `${status}\n` : ""}
+        type: 'text',
+        text: `${status ? `${status}\n` : ''}
 - Page URL: ${page.url()}
 - Page Title: ${await page.title()}
 - Page Snapshot

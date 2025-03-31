@@ -14,16 +14,16 @@
  * limitations under the License.
  */
 
-import { createServerWithTools } from "./server";
-import * as snapshot from "./tools/snapshot";
-import * as common from "./tools/common";
-import * as screenshot from "./tools/screenshot";
-import { console } from "./resources/console";
+import { createServerWithTools } from './server';
+import * as snapshot from './tools/snapshot';
+import * as common from './tools/common';
+import * as screenshot from './tools/screenshot';
+import { console } from './resources/console';
 
-import type { Tool } from "./tools/tool";
-import type { Resource } from "./resources/resource";
-import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import type { LaunchOptions } from "playwright";
+import type { Tool } from './tools/tool';
+import type { Resource } from './resources/resource';
+import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import type { LaunchOptions } from 'playwright';
 
 const commonTools: Tool[] = [
   common.pressKey,
@@ -65,15 +65,15 @@ type Options = {
   launchOptions?: LaunchOptions;
 };
 
-const packageJSON = require("../package.json");
+const packageJSON = require('../package.json');
 
 export function createServer(options?: Options): Server {
   const tools = options?.vision ? screenshotTools : snapshotTools;
   return createServerWithTools(
-    "Playwright",
-    packageJSON.version,
-    tools,
-    resources,
-    options?.launchOptions
+      'Playwright',
+      packageJSON.version,
+      tools,
+      resources,
+      options?.launchOptions
   );
 }
