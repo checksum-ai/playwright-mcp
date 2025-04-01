@@ -16,28 +16,68 @@
 
 import * as playwright from 'playwright';
 
+export type ContextOptions = {
+  userDataDir: string;
+  launchOptions?: playwright.LaunchOptions;
+  cdpEndpoint?: string;
+  remoteEndpoint?: string;
+};
+
 export class Context {
-  private _launchOptions: playwright.LaunchOptions | undefined;
+  private _options: ContextOptions;
   private _browser: playwright.Browser | undefined;
   private _page: playwright.Page | undefined;
   private _console: playwright.ConsoleMessage[] = [];
-  private _initializePromise: Promise<void> | undefined;
+  private _createPagePromise: Promise<playwright.Page> | undefined;
+  private _fileChooser: playwright.FileChooser | undefined;
+  private _lastSnapshotFrames: playwright.FrameLocator[] = [];
   private _logger: (data: unknown) => Promise<void>;
-  constructor(
-    launchOptions?: playwright.LaunchOptions,
-    logger?: (data: unknown) => Promise<void>
-  ) {
-    this._launchOptions = launchOptions;
-    this._logger = logger ?? (async () => {});
+
+  constructor(options: ContextOptions, logger: (data: unknown) => Promise<void>) {
+    this._options = options;
+    this._logger = logger;
   }
 
-  async ensurePage(): Promise<playwright.Page> {
-    await this._initialize();
-    return this._page!;
+  async createPage(): Promise<playwright.Page> {
+    if (this._createPagePromise)
+      return this._createPagePromise;
+    this._createPagePromise = (async () => {
+      const { browser, page } = await this._createPage();
+      page.on('console', event => this._console.push(event));
+      page.on('framenavigated', frame => {
+        if (!frame.parentFrame())
+          this._console.length = 0;
+      });
+      page.on('close', () => this._onPageClose());
+      page.on('filechooser', chooser => this._fileChooser = chooser);
+      page.setDefaultNavigationTimeout(60000);
+      page.setDefaultTimeout(5000);
+      this._page = page;
+      this._browser = browser;
+      return page;
+    })();
+    return this._createPagePromise;
   }
 
-  async ensureConsole(): Promise<playwright.ConsoleMessage[]> {
-    await this._initialize();
+  private _onPageClose() {
+    const browser = this._browser;
+    const page = this._page;
+    void page?.context()?.close().then(() => browser?.close()).catch(() => {});
+
+    this._createPagePromise = undefined;
+    this._browser = undefined;
+    this._page = undefined;
+    this._fileChooser = undefined;
+    this._console.length = 0;
+  }
+
+  existingPage(): playwright.Page {
+    if (!this._page)
+      throw new Error('Navigate to a location to create a page');
+    return this._page;
+  }
+
+  async console(): Promise<playwright.ConsoleMessage[]> {
     return this._console;
   }
 
@@ -46,74 +86,88 @@ export class Context {
   }
 
   async close() {
-    const page = await this.ensurePage();
-    await page.close();
+    if (!this._page)
+      return;
+    await this._page.close();
   }
 
-  private async _initialize() {
-    if (this._initializePromise)
-      return this._initializePromise;
-    this._initializePromise = (async () => {
-      // Check if we should use CDP mode
-      // TODO: Remove this once we have a better way to handle the connection
-      const useCDP = true;
-      this._browser = await createBrowser(
-          this._launchOptions,
-          useCDP,
-          this._logger
-      );
+  async submitFileChooser(paths: string[]) {
+    if (!this._fileChooser)
+      throw new Error('No file chooser visible');
+    await this._fileChooser.setFiles(paths);
+    this._fileChooser = undefined;
+  }
 
-      // When connecting over CDP, get the first context and page instead of creating new ones
-      if (useCDP) {
-        const contexts = this._browser.contexts();
-        const context = contexts[0];
-        const pages = await context.pages();
-        await this._logger(pages);
+  hasFileChooser() {
+    return !!this._fileChooser;
+  }
 
-        this._page = pages[0];
-      } else {
-        this._page = await this._browser.newPage();
+  clearFileChooser() {
+    this._fileChooser = undefined;
+  }
+
+  private async _createPage(): Promise<{ browser?: playwright.Browser, page: playwright.Page }> {
+    if (this._options.remoteEndpoint) {
+      const url = new URL(this._options.remoteEndpoint);
+      if (this._options.launchOptions)
+        url.searchParams.set('launch-options', JSON.stringify(this._options.launchOptions));
+      const browser = await playwright.chromium.connect(String(url));
+      const page = await browser.newPage();
+      return { browser, page };
+    }
+
+    if (this._options.cdpEndpoint) {
+      const browser = await playwright.chromium.connectOverCDP(this._options.cdpEndpoint);
+      const browserContext = browser.contexts()[0];
+      let [page] = browserContext.pages();
+      if (!page) {
+        this.log(`Creating new page`);
+        page = await browserContext.newPage();
       }
+      await page.waitForTimeout(1000);
+      return { browser, page };
+    }
 
-      this._page.on('console', event => this._console.push(event));
-      this._page.on('framenavigated', frame => {
-        if (!frame.parentFrame())
-          this._console.length = 0;
-      });
-      this._page.on('close', () => this._reset());
-    })();
-    return this._initializePromise;
+    const context = await playwright.chromium.launchPersistentContext(this._options.userDataDir, this._options.launchOptions);
+    const [page] = context.pages();
+    return { page };
   }
 
-  private _reset() {
-    const browser = this._browser;
-    this._initializePromise = undefined;
-    this._browser = undefined;
-    this._page = undefined;
-    this._console.length = 0;
-    void browser?.close();
-  }
-}
+  async allFramesSnapshot() {
+    const page = this.existingPage();
+    const visibleFrames = await page.locator('iframe').filter({ visible: true }).all();
+    this._lastSnapshotFrames = visibleFrames.map(frame => frame.contentFrame());
 
-async function createBrowser(
-  launchOptions?: playwright.LaunchOptions,
-  useCDP: boolean = false,
-  logger: (data: unknown) => Promise<void> = async () => {}
-): Promise<playwright.Browser> {
-  await logger('createBrowser');
-  if (process.env.PLAYWRIGHT_WS_ENDPOINT) {
-    const url = new URL(process.env.PLAYWRIGHT_WS_ENDPOINT);
-    url.searchParams.set('launch-options', JSON.stringify(launchOptions));
-    return await playwright.chromium.connect(String(url));
+    const snapshots = await Promise.all([
+      page.locator('html').ariaSnapshot({ ref: true }),
+      ...this._lastSnapshotFrames.map(async (frame, index) => {
+        const snapshot = await frame.locator('html').ariaSnapshot({ ref: true });
+        const args = [];
+        const src = await frame.owner().getAttribute('src');
+        if (src)
+          args.push(`src=${src}`);
+        const name = await frame.owner().getAttribute('name');
+        if (name)
+          args.push(`name=${name}`);
+        return `\n# iframe ${args.join(' ')}\n` + snapshot.replaceAll('[ref=', `[ref=f${index}`);
+      })
+    ]);
+
+    return snapshots.join('\n');
   }
-  // Support connecting to Chrome debugging port
-  if (useCDP) {
-    await logger('createBrowser useCDP');
-    const port = process.env.CHROME_DEBUGGING_PORT || 9222;
-    return await playwright.chromium.connectOverCDP('http://127.0.0.1:' + port);
+
+  refLocator(ref: string): playwright.Locator {
+    const page = this.existingPage();
+    let frame: playwright.Frame | playwright.FrameLocator = page.mainFrame();
+    const match = ref.match(/^f(\d+)(.*)/);
+    if (match) {
+      const frameIndex = parseInt(match[1], 10);
+      if (!this._lastSnapshotFrames[frameIndex])
+        throw new Error(`Frame does not exist. Provide ref from the most current snapshot.`);
+      frame = this._lastSnapshotFrames[frameIndex];
+      ref = match[2];
+    }
+
+    return frame.locator(`aria-ref=${ref}`);
   }
-  return await playwright.chromium.launch({
-    channel: 'chrome',
-    ...launchOptions,
-  });
 }

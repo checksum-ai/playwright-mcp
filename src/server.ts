@@ -26,25 +26,24 @@ import { Context } from './context';
 
 import type { Tool } from './tools/tool';
 import type { Resource } from './resources/resource';
-import type { LaunchOptions } from 'playwright';
+import type { ContextOptions } from './context';
 
-export function createServerWithTools(
-  name: string,
-  version: string,
-  tools: Tool[],
+type Options = ContextOptions & {
+  name: string;
+  version: string;
+  tools: Tool[];
   resources: Resource[],
-  launchOption?: LaunchOptions
-): Server {
-  const server = new Server(
-      { name, version },
-      {
-        capabilities: {
-          tools: {},
-          resources: {},
-          logging: {},
-        },
-      }
-  );
+};
+
+export function createServerWithTools(options: Options): Server {
+  const { name, version, tools, resources } = options;
+  const server = new Server({ name, version }, {
+    capabilities: {
+      tools: {},
+      resources: {},
+      logging: {},
+    }
+  });
 
   // TODO pass more robust logging solution
   async function log(data: unknown) {
@@ -53,7 +52,8 @@ export function createServerWithTools(
       data,
     });
   }
-  const context = new Context(launchOption, log);
+
+  const context = new Context(options, log);
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return { tools: tools.map(tool => tool.schema) };
@@ -73,6 +73,10 @@ export function createServerWithTools(
         isError: true,
       };
     }
+
+    // create page here since we want to be able to use repl after the page is created
+    await context.createPage();
+
 
     try {
       const result = await tool.handle(context, request.params.arguments);
@@ -96,10 +100,38 @@ export function createServerWithTools(
     return { contents };
   });
 
+  const oldClose = server.close.bind(server);
+
   server.close = async () => {
-    await server.close();
+    await oldClose();
     await context.close();
   };
 
   return server;
+}
+
+export class ServerList {
+  private _servers: Server[] = [];
+  private _serverFactory: () => Server;
+
+  constructor(serverFactory: () => Server) {
+    this._serverFactory = serverFactory;
+  }
+
+  async create() {
+    const server = this._serverFactory();
+    this._servers.push(server);
+    return server;
+  }
+
+  async close(server: Server) {
+    const index = this._servers.indexOf(server);
+    if (index !== -1)
+      this._servers.splice(index, 1);
+    await server.close();
+  }
+
+  async closeAll() {
+    await Promise.all(this._servers.map(server => server.close()));
+  }
 }

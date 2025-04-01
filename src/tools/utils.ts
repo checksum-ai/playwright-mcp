@@ -77,42 +77,40 @@ async function waitForCompletion<R>(
   }
 }
 
-export async function runAndWait(
-  context: Context,
-  status: string,
-  callback: (page: playwright.Page) => Promise<any>,
-  snapshot: boolean = false,
-  returnCallbackResult: boolean = false
-): Promise<ToolResult> {
-  const page = await context.ensurePage();
-  const result = await waitForCompletion(page, () => callback(page));
-  const statusToUse = returnCallbackResult && result ? result : status;
-  return snapshot
-    ? captureAriaSnapshot(page, statusToUse)
-    : {
-      content: [{ type: 'text', text: statusToUse }],
-    };
+
+export async function runAndWait(context: Context, status: string, callback: (page: playwright.Page) => Promise<any>, snapshot: boolean = false, returnCallbackResult: boolean = false): Promise<ToolResult> {
+  const page = context.existingPage();
+  const dismissFileChooser = context.hasFileChooser();
+  const callbackResult = await waitForCompletion(page, () => callback(page));
+  const finalStatus = returnCallbackResult && callbackResult ? callbackResult : status;
+  if (dismissFileChooser)
+    context.clearFileChooser();
+  const result: ToolResult = snapshot ? await captureAriaSnapshot(context, finalStatus) : {
+    content: [{ type: 'text', text: finalStatus }],
+  };
+  return result;
 }
 
-export async function captureAriaSnapshot(
-  page: playwright.Page,
-  status: string = ''
-): Promise<ToolResult> {
-  const snapshot = await page.locator('html').ariaSnapshot({ ref: true });
-  // TODO better formatting for status when it's a callback result
+export async function captureAriaSnapshot(context: Context, status: string = ''): Promise<ToolResult> {
+  const page = context.existingPage();
+  const lines = [];
+  if (status)
+    lines.push(`${status}`);
+  lines.push(
+      '',
+      `- Page URL: ${page.url()}`,
+      `- Page Title: ${await page.title()}`
+  );
+  if (context.hasFileChooser())
+    lines.push(`- There is a file chooser visible that requires browser_choose_file to be called`);
+  lines.push(
+      `- Page Snapshot`,
+      '```yaml',
+      await context.allFramesSnapshot(),
+      '```',
+      ''
+  );
   return {
-    content: [
-      {
-        type: 'text',
-        text: `${status ? `${status}\n` : ''}
-- Page URL: ${page.url()}
-- Page Title: ${await page.title()}
-- Page Snapshot
-\`\`\`yaml
-${snapshot}
-\`\`\`
-`,
-      },
-    ],
+    content: [{ type: 'text', text: lines.join('\n') }],
   };
 }

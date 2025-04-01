@@ -42,12 +42,15 @@ export const navigate: ToolFactory = snapshot => ({
   },
   handle: async (context, params) => {
     const validatedParams = navigateSchema.parse(params);
-    const page = await context.ensurePage();
+    // moved create a page to the context creation so we can use repl after the page is created
+    // const page = await context.createPage();
+    const page = context.existingPage();
+
     await page.goto(validatedParams.url, { waitUntil: 'domcontentloaded' });
     // Cap load event to 5 seconds, the page is operational at this point.
     await page.waitForLoadState('load', { timeout: 5000 }).catch(() => {});
     if (snapshot)
-      return captureAriaSnapshot(page);
+      return captureAriaSnapshot(context);
     return {
       content: [
         {
@@ -68,15 +71,7 @@ export const goBack: ToolFactory = snapshot => ({
     inputSchema: zodToJsonSchema(goBackSchema),
   },
   handle: async context => {
-    return await runAndWait(
-        context,
-        'Navigated back',
-        async () => {
-          const page = await context.ensurePage();
-          await page.goBack();
-        },
-        snapshot
-    );
+    return await runAndWait(context, 'Navigated back', async page => page.goBack(), snapshot);
   },
 });
 
@@ -89,15 +84,7 @@ export const goForward: ToolFactory = snapshot => ({
     inputSchema: zodToJsonSchema(goForwardSchema),
   },
   handle: async context => {
-    return await runAndWait(
-        context,
-        'Navigated forward',
-        async () => {
-          const page = await context.ensurePage();
-          await page.goForward();
-        },
-        snapshot
-    );
+    return await runAndWait(context, 'Navigated forward', async page => page.goForward(), snapshot);
   },
 });
 
@@ -113,8 +100,7 @@ export const wait: Tool = {
   },
   handle: async (context, params) => {
     const validatedParams = waitSchema.parse(params);
-    const page = await context.ensurePage();
-    await page.waitForTimeout(Math.min(10000, validatedParams.time * 1000));
+    await new Promise(f => setTimeout(f, Math.min(10000, validatedParams.time * 1000)));
     return {
       content: [
         {
@@ -161,11 +147,8 @@ export const pdf: Tool = {
     inputSchema: zodToJsonSchema(pdfSchema),
   },
   handle: async context => {
-    const page = await context.ensurePage();
-    const fileName = path.join(
-        os.tmpdir(),
-        `/page-${new Date().toISOString()}.pdf`
-    );
+    const page = context.existingPage();
+    const fileName = path.join(os.tmpdir(), `/page-${new Date().toISOString()}.pdf`);
     await page.pdf({ path: fileName });
     return {
       content: [
@@ -230,3 +213,21 @@ export const evaluatePlaywright: Tool = {
     };
   },
 };
+
+const chooseFileSchema = z.object({
+  paths: z.array(z.string()).describe('The absolute paths to the files to upload. Can be a single file or multiple files.'),
+});
+
+export const chooseFile: ToolFactory = snapshot => ({
+  schema: {
+    name: 'browser_choose_file',
+    description: 'Choose one or multiple files to upload',
+    inputSchema: zodToJsonSchema(chooseFileSchema),
+  },
+  handle: async (context, params) => {
+    const validatedParams = chooseFileSchema.parse(params);
+    return await runAndWait(context, `Chose files ${validatedParams.paths.join(', ')}`, async () => {
+      await context.submitFileChooser(validatedParams.paths);
+    }, snapshot);
+  },
+});

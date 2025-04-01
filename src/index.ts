@@ -37,12 +37,15 @@ const snapshotTools: Tool[] = [
   common.navigate(true),
   common.goBack(true),
   common.goForward(true),
+  common.chooseFile(true),
   snapshot.snapshot,
   snapshot.click,
   snapshot.hover,
   snapshot.type,
   snapshot.getElementOuterHTML,
   snapshot.getElementAncestorHTML,
+  snapshot.selectOption,
+  snapshot.screenshot,
   ...commonTools,
 ];
 
@@ -50,6 +53,7 @@ const screenshotTools: Tool[] = [
   common.navigate(false),
   common.goBack(false),
   common.goForward(false),
+  common.chooseFile(false),
   screenshot.screenshot,
   screenshot.moveMouse,
   screenshot.click,
@@ -61,19 +65,23 @@ const screenshotTools: Tool[] = [
 const resources: Resource[] = [console];
 
 type Options = {
-  vision?: boolean;
+  userDataDir?: string;
   launchOptions?: LaunchOptions;
+  cdpEndpoint?: string;
+  vision?: boolean;
 };
 
 const packageJSON = require('../package.json');
 
 export function createServer(options?: Options): Server {
   const tools = options?.vision ? screenshotTools : snapshotTools;
-  return createServerWithTools(
-      'Playwright',
-      packageJSON.version,
-      tools,
-      resources,
-      options?.launchOptions
-  );
+  return createServerWithTools({
+    name: 'Playwright',
+    version: packageJSON.version,
+    tools,
+    resources,
+    userDataDir: options?.userDataDir ?? '',
+    launchOptions: options?.launchOptions,
+    cdpEndpoint: options?.cdpEndpoint,
+  });
 }

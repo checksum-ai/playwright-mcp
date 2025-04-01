@@ -33,7 +33,19 @@ A Model Context Protocol (MCP) server that provides browser automation capabilit
 
 #### Installation in VS Code
 
-Install the Playwright MCP server using the VS Code CLI:
+Install the Playwright MCP server in VS Code using one of these buttons:
+
+<!--
+// Generate using?:
+const config = JSON.stringify({ name: 'playwright', command: 'npx', args: ["-y", "@playwright/mcp@latest"] });
+const urlForWebsites = `vscode:mcp/install?${encodeURIComponent(config)}`;
+// Github markdown does not allow linking to `vscode:` directly, so you can use our redirect:
+const urlForGithub = `https://insiders.vscode.dev/redirect?url=${encodeURIComponent(urlForWebsites)}`;
+-->
+
+[<img alt="Install in VS Code Insiders" src="https://img.shields.io/badge/VS_Code_Insiders-VS_Code_Insiders?style=flat-square&label=Install%20Server&color=24bfa5">](https://insiders.vscode.dev/redirect?url=vscode-insiders%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522playwright%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522%2540playwright%252Fmcp%2540latest%2522%255D%257D)
+
+Alternatively, you can install the Playwright MCP server using the VS Code CLI:
 
 ```bash
 # For VS Code
@@ -46,6 +58,18 @@ code-insiders --add-mcp '{"name":"playwright","command":"npx","args":["@playwrig
 ```
 
 After installation, the Playwright MCP server will be available for use with your GitHub Copilot agent in VS Code.
+
+### User data directory
+
+Playwright MCP will launch Chrome browser with the new profile, located at
+
+```
+- `%USERPROFILE%\AppData\Local\ms-playwright\mcp-chrome-profile` on Windows
+- `~/Library/Caches/ms-playwright/mcp-chrome-profile` on macOS
+- `~/.cache/ms-playwright/mcp-chrome-profile` on Linux
+```
+
+All the logged in information will be stored in that profile, you can delete it between sessions if you'd like to clear the offline state.
 
 
 ### Running headless browser (Browser without GUI).
@@ -69,27 +93,19 @@ This mode is useful for background or batch operations.
 ### Running headed browser on Linux w/o DISPLAY
 
 When running headed browser on system w/o display or from worker processes of the IDEs,
-you can run Playwright in a client-server manner. You'll run the Playwright server
-from environment with the DISPLAY
+run the MCP server from environment with the DISPLAY and pass the `--port` flag to enable SSE transport.
 
-```sh
-npx playwright run-server
+```bash
+npx @playwright/mcp@latest --port 8931
 ```
 
-And then in MCP config, add following to the `env`:
+And then in MCP client config, set the `url` to the SSE endpoint:
 
 ```js
 {
   "mcpServers": {
     "playwright": {
-      "command": "npx",
-      "args": [
-        "@playwright/mcp@latest"
-      ],
-      "env": {
-        // Use the endpoint from the output of the server above.
-        "PLAYWRIGHT_WS_ENDPOINT": "ws://localhost:<port>/"
-      }
+      "url": "http://localhost:8931/sse"
     }
   }
 }
@@ -180,6 +196,18 @@ The Playwright MCP provides a set of tools for browser automation. Here are all 
     - `text` (string): Text to type into the element
     - `submit` (boolean): Whether to submit entered text (press Enter after)
 
+- **browser_select_option**
+  - Description: Select option in a dropdown
+  - Parameters:
+    - `element` (string): Human-readable element description used to obtain permission to interact with the element
+    - `ref` (string): Exact target element reference from the page snapshot
+    - `values` (array): Array of values to select in the dropdown.
+
+- **browser_choose_file**
+  - Description: Choose one or multiple files to upload
+  - Parameters:
+    - `paths` (array): The absolute paths to the files to upload. Can be a single file or multiple files.
+
 - **browser_press_key**
   - Description: Press a key on the keyboard
   - Parameters:
@@ -192,6 +220,11 @@ The Playwright MCP provides a set of tools for browser automation. Here are all 
 - **browser_save_as_pdf**
   - Description: Save page as PDF
   - Parameters: None
+
+- **browser_take_screenshot**
+  - Description: Capture screenshot of the page
+  - Parameters:
+    - `raw` (string): Optionally returns lossless PNG screenshot. JPEG by default.
 
 - **browser_wait**
   - Description: Wait for a specified time in seconds
@@ -254,6 +287,11 @@ Vision Mode provides tools for visual-based interactions using screenshots. Here
   - Description: Press a key on the keyboard
   - Parameters:
     - `key` (string): Name of the key to press or a character to generate, such as `ArrowLeft` or `a`
+
+- **browser_choose_file**
+  - Description: Choose one or multiple files to upload
+  - Parameters:
+    - `paths` (array): The absolute paths to the files to upload. Can be a single file or multiple files.
 
 - **browser_save_as_pdf**
   - Description: Save page as PDF

@@ -33,7 +33,7 @@ export const snapshot: Tool = {
   },
 
   handle: async context => {
-    return await captureAriaSnapshot(await context.ensurePage());
+    return await captureAriaSnapshot(context);
   },
 };
 
@@ -57,12 +57,7 @@ export const click: Tool = {
 
   handle: async (context, params) => {
     const validatedParams = elementSchema.parse(params);
-    return runAndWait(
-        context,
-        `"${validatedParams.element}" clicked`,
-        page => refLocator(page, validatedParams.ref).click(),
-        true
-    );
+    return runAndWait(context, `"${validatedParams.element}" clicked`, () => context.refLocator(validatedParams.ref).click(), true);
   },
 };
 
@@ -94,16 +89,11 @@ export const drag: Tool = {
 
   handle: async (context, params) => {
     const validatedParams = dragSchema.parse(params);
-    return runAndWait(
-        context,
-        `Dragged "${validatedParams.startElement}" to "${validatedParams.endElement}"`,
-        async page => {
-          const startLocator = refLocator(page, validatedParams.startRef);
-          const endLocator = refLocator(page, validatedParams.endRef);
-          await startLocator.dragTo(endLocator);
-        },
-        true
-    );
+    return runAndWait(context, `Dragged "${validatedParams.startElement}" to "${validatedParams.endElement}"`, async () => {
+      const startLocator = context.refLocator(validatedParams.startRef);
+      const endLocator = context.refLocator(validatedParams.endRef);
+      await startLocator.dragTo(endLocator);
+    }, true);
   },
 };
 
@@ -116,12 +106,7 @@ export const hover: Tool = {
 
   handle: async (context, params) => {
     const validatedParams = elementSchema.parse(params);
-    return runAndWait(
-        context,
-        `Hovered over "${validatedParams.element}"`,
-        page => refLocator(page, validatedParams.ref).hover(),
-        true
-    );
+    return runAndWait(context, `Hovered over "${validatedParams.element}"`, () => context.refLocator(validatedParams.ref).hover(), true);
   },
 };
 
@@ -141,17 +126,54 @@ export const type: Tool = {
 
   handle: async (context, params) => {
     const validatedParams = typeSchema.parse(params);
-    return await runAndWait(
-        context,
-        `Typed "${validatedParams.text}" into "${validatedParams.element}"`,
-        async page => {
-          const locator = refLocator(page, validatedParams.ref);
-          await locator.fill(validatedParams.text);
-          if (validatedParams.submit)
-            await locator.press('Enter');
-        },
-        true
-    );
+    return await runAndWait(context, `Typed "${validatedParams.text}" into "${validatedParams.element}"`, async () => {
+      const locator = context.refLocator(validatedParams.ref);
+      await locator.fill(validatedParams.text);
+      if (validatedParams.submit)
+        await locator.press('Enter');
+    }, true);
+  },
+};
+
+const selectOptionSchema = elementSchema.extend({
+  values: z.array(z.string()).describe('Array of values to select in the dropdown. This can be a single value or multiple values.'),
+});
+
+export const selectOption: Tool = {
+  schema: {
+    name: 'browser_select_option',
+    description: 'Select an option in a dropdown',
+    inputSchema: zodToJsonSchema(selectOptionSchema),
+  },
+
+  handle: async (context, params) => {
+    const validatedParams = selectOptionSchema.parse(params);
+    return await runAndWait(context, `Selected option in "${validatedParams.element}"`, async () => {
+      const locator = context.refLocator(validatedParams.ref);
+      await locator.selectOption(validatedParams.values);
+    }, true);
+  },
+};
+
+const screenshotSchema = z.object({
+  raw: z.boolean().optional().describe('Whether to return without compression (in PNG format). Default is false, which returns a JPEG image.'),
+});
+
+export const screenshot: Tool = {
+  schema: {
+    name: 'browser_take_screenshot',
+    description: `Take a screenshot of the current page. You can't perform actions based on the screenshot, use browser_snapshot for actions.`,
+    inputSchema: zodToJsonSchema(screenshotSchema),
+  },
+
+  handle: async (context, params) => {
+    const validatedParams = screenshotSchema.parse(params);
+    const page = context.existingPage();
+    const options: playwright.PageScreenshotOptions = validatedParams.raw ? { type: 'png', scale: 'css' } : { type: 'jpeg', quality: 50, scale: 'css' };
+    const screenshot = await page.screenshot(options);
+    return {
+      content: [{ type: 'image', data: screenshot.toString('base64'), mimeType: validatedParams.raw ? 'image/png' : 'image/jpeg' }],
+    };
   },
 };
 
@@ -168,7 +190,7 @@ export const getElementOuterHTML: Tool = {
         context,
         `"extracted ${validatedParams.element}" outerHTML`,
         async page => {
-          const html = await refLocator(page, validatedParams.ref).evaluate(
+          const html = await context.refLocator(validatedParams.ref).evaluate(
               el => el.outerHTML
           );
           return await formatHTML(html);
@@ -193,7 +215,7 @@ export const getElementAncestorHTML: Tool = {
         context,
         `"extracted ${validatedParams.element}" ancestor HTML`,
         async page => {
-          const locator = refLocator(page, validatedParams.ref);
+          const locator = context.refLocator(validatedParams.ref);
           let currentHTML = await locator.evaluate(el => el.outerHTML);
           let currentElement = locator;
 
@@ -224,9 +246,6 @@ export const getElementAncestorHTML: Tool = {
   },
 };
 
-function refLocator(page: playwright.Page, ref: string): playwright.Locator {
-  return page.locator(`aria-ref=${ref}`);
-}
 
 async function formatHTML(html: string): Promise<string> {
   return await prettier.format(html, { parser: 'html' });
