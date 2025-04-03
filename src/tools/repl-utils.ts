@@ -20,10 +20,15 @@ import os from 'os';
 
 // Define constants and variables
 const TEMP_DIR = os.tmpdir();
+
+
+if (!process.env.INTERNAL_UTILS_PATH)
+  throw new Error('INTERNAL_UTILS_PATH is not set');
+
+
 // TODO env variable
-const INTERNAL_UTILS_PATH = path.join(
-    '/Users/galvered/Dev/checksum-customer-engineering/tools'
-);
+const INTERNAL_UTILS_PATH = process.env.INTERNAL_UTILS_PATH;
+
 const REPL_UTILS_PATH = path.join(INTERNAL_UTILS_PATH, 'repl.js');
 
 export interface ReplMessage {
